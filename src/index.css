@@ -1,0 +1,19 @@
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.graph-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
