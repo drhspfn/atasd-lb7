@@ -297,79 +297,78 @@ function App() {
 		let maxFlow = 0;
 		const paths = []; // Массив для хранения всех путей
 
-		const bfs = (source, sink) => {
-			const visited = {};
-			const queue = [source];
-			visited[source] = true;
-			parent[source] = null;
+		// DFS с приоритетом по остаточной пропускной способности
+		const dfs = (current, sink, visited) => {
+			if (current === sink) return true; // Если достигли стока, путь найден
 
-			while (queue.length > 0) {
-				const current = queue.shift();
+			visited[current] = true;
 
-				for (const neighbor of Object.keys(residualGraph[current] || {})) {
-					if (!visited[neighbor] && residualGraph[current][neighbor] > 0) {
-						queue.push(neighbor);
-						visited[neighbor] = true;
-						parent[neighbor] = current;
+			const neighbors = Object.keys(residualGraph[current] || {});
+			// Сортируем соседей по остаточной пропускной способности (по убыванию)
+			neighbors.sort((a, b) => residualGraph[current][b] - residualGraph[current][a]);
 
-						if (neighbor === sink) {
-							return true; // Найден путь
-						}
+			for (const neighbor of neighbors) {
+				if (!visited[neighbor] && residualGraph[current][neighbor] > 0) {
+					parent[neighbor] = current; // Сохраняем предка
+					if (dfs(neighbor, sink, visited)) {
+						return true; // Если путь найден, возвращаем true
 					}
 				}
 			}
-			return false;
+
+			return false; // Если путь не найден
 		};
 
-		// Пока есть путь от source до sink
-		while (bfs(source, sink)) {
-			// Находим минимальный поток по пути
+		// Пока существует путь от source до sink
+		while (dfs(source, sink, {})) {
 			let pathFlow = Infinity;
 			const path = []; // Массив для хранения текущего пути
+
+			// Восстанавливаем путь и находим минимальную пропускную способность по пути
 			for (let v = sink; v !== source; v = parent[v]) {
 				const u = parent[v];
-				pathFlow = Math.min(pathFlow, residualGraph[u][v]);
+				pathFlow = Math.min(pathFlow, residualGraph[u][v]); // Минимум на пути
 				path.push(v);
 			}
 			path.push(source);
-			path.reverse(); // Переворачиваем путь, чтобы он шел от источника к стоку
+			path.reverse(); // Переворачиваем путь от source к sink
 
-			await visualizePath(graphData, path);
+			await visualizePath(graphData, path); // Визуализация текущего пути
 
 			// Обновляем остаточный граф
 			for (let v = sink; v !== source; v = parent[v]) {
 				const u = parent[v];
-				residualGraph[u][v] -= pathFlow;
-				residualGraph[v][u] = (residualGraph[v][u] || 0) + pathFlow;
+				residualGraph[u][v] -= pathFlow; // Уменьшаем пропускную способность по ребру
+				residualGraph[v][u] = (residualGraph[v][u] || 0) + pathFlow; // Добавляем поток в обратное ребро
 			}
 
-			await updateResidualCapacities(graphData, residualGraph);
+			await updateResidualCapacities(graphData, residualGraph); // Обновляем граф
 
-			maxFlow += pathFlow;
-			paths.push(path); // Сохраняем текущий путь
+			maxFlow += pathFlow; // Увеличиваем общий поток
+			paths.push(path); // Сохраняем путь
 		}
 
-		return { maxFlow, paths }; // Возвращаем и максимальный поток, и пути
+		return { maxFlow, paths }; // Возвращаем результат
 	};
+
 
 	// Новый метод для нахождения максимального потока
 	const findMaxFlowFordFulkerson = async (graphData, source, sink) => {
 		const adjacencyMatrix = convertGraphToAdjacencyMatrix(graphData.nodes, graphData.links);
 		const { maxFlow, paths } = await fordFulkerson(adjacencyMatrix, source, sink);
-		// console.log(`Максимальний потік: ${maxFlow}`);
 
-		// Выводим все пути
-		// paths.forEach((path, index) => {
-		// 	console.log(`Путь ${index + 1}: ${path.join(' -> ')}`);
-		// });
+		// Остаточный граф из fordFulkerson
+		const residualGraph = adjacencyMatrix;
 
-		// console.log(graphData)
+		const { reachable, minCutEdges } = findMinCut(residualGraph, source);
+		console.log([reachable, minCutEdges])
+		await visualizeMinCut(graphData, minCutEdges);
 
-		console.log("ВСЕ")
-		setResults({ maxFlow, paths });
+		setShowFindMaxFlow(false);
+		setResults({ maxFlow, paths, minCutEdges });
 		setShowResults(true);
 
-		return { maxFlow, paths }; // Возвращаем и максимальный поток, и пути
+		return { maxFlow, paths, minCutEdges }; // Возвращаем и максимальный поток, и пути
 	};
 
 	// Конвертация данных графа в формат матрицы смежности
@@ -405,12 +404,74 @@ function App() {
 		});
 
 		// Ждем перед переходом к следующему шагу
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	};
+
+	const visualizeMinCut = async (graphData, minCutEdges) => {
+		// Изменяем цвет рёбер для минимального разреза
+		const updatedLinks = graphData.links.map((link) => ({
+			...link,
+			color: minCutEdges.some(([u, v]) => link.source === u && link.target === v) ? 'red' : 'lightblue',
+			strokeWidth: minCutEdges.some(([u, v]) => link.source === u && link.target === v) ? 3 : 1,
+		}));
+	
+		// Изменяем цвет узлов (если нужно)
+		const updatedNodes = graphData.nodes.map((node) => ({
+			...node,
+			color: 'lightblue', // Узлы могут оставаться того же цвета, если не требуется выделение
+		}));
+	
+		// Обновляем граф с новыми цветами
+		setGraphData({
+			nodes: updatedNodes,
+			links: updatedLinks,
+		});
+	
+		// Ждем перед переходом к следующему шагу
 		await new Promise((resolve) => setTimeout(resolve, 1000));
+	};
+	
+
+	const findMinCut = (residualGraph, source) => {
+		const visited = {};
+		const reachable = []; // Узлы, которые достижимы из source
+
+		// BFS для поиска достижимых узлов
+		const bfs = (current) => {
+			const queue = [current];
+			visited[current] = true;
+
+			while (queue.length > 0) {
+				const node = queue.shift();
+				reachable.push(node);
+
+				for (const neighbor of Object.keys(residualGraph[node] || {})) {
+					if (!visited[neighbor] && residualGraph[node][neighbor] > 0) {
+						visited[neighbor] = true;
+						queue.push(neighbor);
+					}
+				}
+			}
+		};
+
+		bfs(source);
+
+		// Находим рёбра, которые составляют минимальный разрез
+		const minCutEdges = [];
+		for (const u of reachable) {
+			for (const v of Object.keys(residualGraph[u] || {})) {
+				if (!visited[v] && residualGraph[u][v] !== undefined) {
+					minCutEdges.push([u, v]); // Ребро из достижимого узла к недостижимому
+				}
+			}
+		}
+
+		return { reachable, minCutEdges };
 	};
 
 
+
 	const updateResidualCapacities = async (graphData, residualGraph) => {
-		console.log('graphData.links: ', graphData.links)
 		const updatedLinks = graphData.links.map((link) => {
 			const capacity = residualGraph[link.source][link.target] || 0;
 			const maxCapacity = link.maxCapacity; // Предварительно добавить это свойство к ребрам
@@ -649,7 +710,11 @@ function App() {
 			)}
 
 			{results && (
-				<Modal show={showResults} onHide={() => setShowResults(false)} style={{ content: { width: "500px", margin: "auto" } }}>
+				<Modal
+					show={showResults}
+					onHide={() => setShowResults(false)}
+					style={{ content: { width: "500px", margin: "auto" } }}
+				>
 					<Modal.Header closeButton>
 						<Modal.Title>Результаты</Modal.Title>
 					</Modal.Header>
@@ -659,6 +724,12 @@ function App() {
 						<ul>
 							{results.paths.map((path, index) => (
 								<li key={index}>Шлях {index + 1}: {path.join(" → ")}</li>
+							))}
+						</ul>
+						<h3>Мінімальний розріз:</h3>
+						<ul>
+							{results.minCutEdges.map(([u, v], index) => (
+								<li key={index}>Ребро: {u} → {v}</li>
 							))}
 						</ul>
 					</Modal.Body>
@@ -674,6 +745,7 @@ function App() {
 					</Modal.Footer>
 				</Modal>
 			)}
+
 
 
 
